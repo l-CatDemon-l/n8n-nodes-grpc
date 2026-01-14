@@ -1,6 +1,6 @@
 {
   "name": "@catdemon/n8n-nodes-grpc",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "n8n custom nodes for executing gRPC calls with dynamic proto parsing",
   "keywords": [
     "n8n",

@@ -12,6 +12,57 @@ import * as os from 'os';
 import type { GrpcConfig, MetadataEntry, GrpcCallOptions, ProtoFile } from './types';
 import { parseProtoFiles } from './protoParser';
 
+// Debug logging is opt-in via env var to avoid noisy logs and accidental secret leakage.
+const DEBUG_ENABLED =
+	process.env.N8N_NODES_GRPC_DEBUG === '1' ||
+	process.env.N8N_NODES_GRPC_DEBUG === 'true' ||
+	process.env.N8N_GRPC_DEBUG === '1' ||
+	process.env.N8N_GRPC_DEBUG === 'true';
+
+function debugLog(message: string, data?: Record<string, unknown>): void {
+	if (!DEBUG_ENABLED) return;
+	if (data) {
+		// Never log auth values/tokens. Keep payload strictly non-sensitive.
+		console.log(`[n8n-nodes-grpc] ${message}`, data);
+	} else {
+		console.log(`[n8n-nodes-grpc] ${message}`);
+	}
+}
+
+function getMetadataKeys(entries: MetadataEntry[]): string[] {
+	return (entries || [])
+		.map((e) => (e?.key ?? '').trim().toLowerCase())
+		.filter(Boolean);
+}
+
+function maskTokenPreview(rawValue: string): { present: boolean; length: number; suffix: string } {
+	const value = (rawValue ?? '').trim();
+	if (!value) {
+		return { present: false, length: 0, suffix: '' };
+	}
+	const suffix = value.length <= 6 ? value : value.slice(-6);
+	return { present: true, length: value.length, suffix };
+}
+
+function getAuthPreview(entries: MetadataEntry[]): Record<string, unknown> | null {
+	for (const e of entries || []) {
+		const key = (e?.key ?? '').trim().toLowerCase();
+		if (!key) continue;
+		if (key === 'authorization' || key === 'x-api-key' || key === 'api-key' || key === 'apikey') {
+			const raw = (e?.value ?? '').trim();
+			const bearer = raw.toLowerCase().startsWith('bearer ') ? raw.slice(7) : raw;
+			return {
+				key,
+				// Never log full secrets. Suffix+length is enough to detect "empty" vs "set".
+				present: Boolean(bearer),
+				length: bearer.length,
+				suffix: bearer ? bearer.slice(-6) : '',
+			};
+		}
+	}
+	return null;
+}
+
 // Google well-known types for proto-loader
 const WELL_KNOWN_PROTOS: ProtoFile[] = [
 	{
@@ -135,6 +186,13 @@ export async function createGrpcClient(
 		// Parse protos for type information
 		const root = parseProtoFiles(config.protoFiles);
 
+		debugLog('Created gRPC client', {
+			host: config.host,
+			useTls: config.useTls,
+			serviceName,
+			protoFilesCount: config.protoFiles.length,
+		});
+
 		return new GrpcClientWrapper(client, root, serviceName, tempDir);
 	} catch (error) {
 		// Clean up temp directory on error
@@ -195,6 +253,11 @@ export function createMetadata(entries: MetadataEntry[]): grpc.Metadata {
 			metadata.add(key.toLowerCase(), value);
 		}
 	}
+	debugLog('Prepared metadata', {
+		keys: getMetadataKeys(entries),
+		count: entries?.length ?? 0,
+		authPreview: getAuthPreview(entries),
+	});
 	return metadata;
 }
 
@@ -430,6 +493,13 @@ export class GrpcClientWrapper {
 		// Process request to encode Any types
 		const processedRequest = processRequestForAny(request, this.root) as Record<string, unknown>;
 
+		debugLog('Invoking unary method', {
+			serviceName: this.serviceName,
+			methodName,
+			metadataKeys: getMetadataKeys(metadata),
+			hasDeadline: Boolean(callOptions.deadline),
+		});
+
 		return new Promise((resolve, reject) => {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const method = (this.client as any)[methodName];
@@ -446,6 +516,13 @@ export class GrpcClientWrapper {
 				callOptions,
 				(error: grpc.ServiceError | null, response: Record<string, unknown>) => {
 					if (error) {
+						debugLog('Unary call failed', {
+							serviceName: this.serviceName,
+							methodName,
+							code: error.code,
+							details: error.details,
+							metadataKeys: getMetadataKeys(metadata),
+						});
 						reject(new Error(`gRPC error (${error.code}): ${error.message}`));
 					} else {
 						// Process response to decode Any types
@@ -476,6 +553,13 @@ export class GrpcClientWrapper {
 		// Process request to encode Any types
 		const processedRequest = processRequestForAny(request, this.root) as Record<string, unknown>;
 
+		debugLog('Invoking server streaming method', {
+			serviceName: this.serviceName,
+			methodName,
+			metadataKeys: getMetadataKeys(metadata),
+			hasDeadline: Boolean(callOptions.deadline),
+		});
+
 		return new Promise((resolve, reject) => {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const method = (this.client as any)[methodName];
@@ -501,6 +585,13 @@ export class GrpcClientWrapper {
 			});
 
 			call.on('error', (error: grpc.ServiceError) => {
+				debugLog('Server streaming call failed', {
+					serviceName: this.serviceName,
+					methodName,
+					code: error.code,
+					details: error.details,
+					metadataKeys: getMetadataKeys(metadata),
+				});
 				reject(new Error(`gRPC stream error (${error.code}): ${error.message}`));
 			});
 
