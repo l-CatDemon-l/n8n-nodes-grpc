@@ -1,0 +1,59 @@
+{
+  "name": "@catdemon/n8n-nodes-grpc",
+  "version": "1.0.0",
+  "description": "n8n custom nodes for executing gRPC calls with dynamic proto parsing",
+  "keywords": [
+    "n8n",
+    "n8n-community-node-package",
+    "grpc",
+    "protobuf",
+    "rpc"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/l-CatDemon-l/n8n-nodes-grpc#readme",
+  "author": {
+    "name": "catdemon"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/l-CatDemon-l/n8n-nodes-grpc.git"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc && gulp build:icons",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/GrpcApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Grpc/Grpc.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.56.0",
+    "gulp": "^4.0.2",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.9.0",
+    "@grpc/proto-loader": "^0.7.0",
+    "n8n-workflow": "*",
+    "protobufjs": "^7.2.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}
