@@ -187,8 +187,12 @@ function cleanupTempDir(tempDir: string): void {
 export function createMetadata(entries: MetadataEntry[]): grpc.Metadata {
 	const metadata = new grpc.Metadata();
 	for (const entry of entries) {
-		if (entry.key && entry.value) {
-			metadata.add(entry.key, entry.value);
+		const key = entry.key?.trim();
+		const value = entry.value?.trim();
+		if (key && value) {
+			// HTTP/2 header names are lowercase on the wire.
+			// Some backends are strict about the metadata key casing.
+			metadata.add(key.toLowerCase(), value);
 		}
 	}
 	return metadata;

@@ -426,6 +426,58 @@ function normalizeFixedCollectionArray<T extends object>(
 }
 
 /**
+ * Flatten wrapper shapes that n8n can produce for fixedCollection values.
+ * This is intentionally defensive: different n8n versions / UI states can nest arrays.
+ */
+function flattenFixedCollectionWrappers(raw: unknown, depth = 0): unknown[] {
+	if (!raw || depth > 4) return [];
+
+	if (Array.isArray(raw)) {
+		return raw.flatMap((item) => flattenFixedCollectionWrappers(item, depth + 1));
+	}
+
+	if (typeof raw === 'object') {
+		const obj = raw as Record<string, unknown>;
+
+		// Common wrapper keys observed in n8n fixedCollection serialization
+		for (const key of ['entry', 'entries', 'value', 'values', 'file', 'files']) {
+			const v = obj[key];
+			if (Array.isArray(v)) {
+				return flattenFixedCollectionWrappers(v, depth + 1);
+			}
+		}
+	}
+
+	return [raw];
+}
+
+function isMetadataEntry(value: unknown): value is MetadataEntry {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+	const obj = value as Record<string, unknown>;
+	return typeof obj.key === 'string' && typeof obj.value === 'string';
+}
+
+function isProtoFile(value: unknown): value is ProtoFile {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+	const obj = value as Record<string, unknown>;
+	return typeof obj.filename === 'string' && typeof obj.content === 'string';
+}
+
+function normalizeMetadataEntries(raw: unknown): MetadataEntry[] {
+	const candidates = normalizeFixedCollectionArray<object>(raw, 'entries');
+	return candidates
+		.flatMap((c) => flattenFixedCollectionWrappers(c))
+		.filter(isMetadataEntry);
+}
+
+function normalizeProtoFiles(raw: unknown): ProtoFile[] {
+	const candidates = normalizeFixedCollectionArray<object>(raw, 'files');
+	return candidates
+		.flatMap((c) => flattenFixedCollectionWrappers(c))
+		.filter(isProtoFile);
+}
+
+/**
  * Get gRPC configuration from credentials or node parameters
  */
 async function getConfig(context: IExecuteFunctions | ILoadOptionsFunctions): Promise<GrpcConfig> {
@@ -453,8 +505,8 @@ async function getConfig(context: IExecuteFunctions | ILoadOptionsFunctions): Pr
 			return {
 				host: connectionSettings.host || 'localhost:50051',
 				useTls: connectionSettings.useTls || false,
-				metadata: normalizeFixedCollectionArray<MetadataEntry>(metadataRaw, 'entries'),
-				protoFiles: normalizeFixedCollectionArray<ProtoFile>(protoFilesRaw, 'files'),
+				metadata: normalizeMetadataEntries(metadataRaw),
+				protoFiles: normalizeProtoFiles(protoFilesRaw),
 			};
 		}
 
@@ -498,8 +550,8 @@ async function getConfig(context: IExecuteFunctions | ILoadOptionsFunctions): Pr
 		return {
 			host: connectionSettings.host || 'localhost:50051',
 			useTls: connectionSettings.useTls || false,
-			metadata: normalizeFixedCollectionArray<MetadataEntry>(metadataRaw, 'entries'),
-			protoFiles: normalizeFixedCollectionArray<ProtoFile>(protoFilesRaw, 'files'),
+			metadata: normalizeMetadataEntries(metadataRaw),
+			protoFiles: normalizeProtoFiles(protoFilesRaw),
 		};
 	}
 }
